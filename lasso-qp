@@ -1,1 +1,81 @@
+```{r, message=FALSE, warning=FALSE}
+library(quadprog)
+library(caret)
+library(readxl)
+library(ggplot2)
+library(plotly)
+```
 
+```{r}
+data_os<- read_excel("C:/Users/Dicky Girsang/Desktop/Semester 6/Optimisasi Statistika/data_optimisasistk.xlsx")
+```
+
+# A. Pre-processing Data
+## 1. Normalisasi Data
+```{r}
+databaku = scale(data_os)
+X <- as.matrix(databaku[,2:8])
+Y <- as.matrix(databaku[,1])
+```
+
+## 2. Splitting Data
+Pada akhir analisis, akan dilakukan 
+```{r}
+prop <- 0.7
+set.seed(123)  
+train_index <- createDataPartition(Y, p = prop, list = FALSE)
+train_data <- data_os[train_index, ]
+test_data <- data_os[-train_index, ]
+```
+
+```{r}
+X <- as.matrix(train_data[, c("X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8")])
+Y <- train_data$Y
+X_test <- as.matrix(test_data[, c("X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8")])
+Y_test <- test_data$Y
+```
+
+# B. Seleksi Lasso dengan QP
+1. Inisialisasi variabel n dengan jumlah baris matriks X, p dengan jumlah kolom matriks X, dan rmse_list sebagai vektor kosong yang akan digunakan untuk menyimpan RMSE untuk setiap nilai t.
+
+2. Dibentuk model dengan koefisien regresi dari model OLS (*ordinary least squares*) dengan menggunakan formula Y ~ X - 1 (tanpa *intercept*). Tahap selanjutnya adalah mencari solusi beta dari masalah optimisasi, dengan matriks D, vektor d, matriks A, dan vektor b0 sebagai argumen.
+
+```{r}
+calculate_RMSE <- function(X, Y, t_values){
+  n <- dim(X)[1]
+  p <- dim(X)[2]
+  rmse_list <- vector()
+  
+  for (t in t_values) {
+    ols.beta <- lm(Y ~ X - 1)
+    t.max <- sum(abs(ols.beta$coef))
+    D <- 2 * t(X) %*% X
+    d <- 2 * t(Y) %*% X
+    A <- as.matrix(expand.grid(rep(list(c(-1,1)), p)))
+    b0 <- rep(-t, 2^p)
+    beta.lasso <- solve.QP(Dmat = D, dvec = d, Amat = t(A), bvec = b0)
+    
+    predicted <- X_test %*% beta.lasso$solution
+    rmse <- sqrt(sum((Y_test - predicted)^2) / n)
+    rmse_list <- c(rmse_list, rmse)
+  }
+
+  results <- data.frame(t_values, RMSE = rmse_list)
+  best_model <- results[which.min(results$RMSE), ]
+  
+  return(list(results = results, best_model = best_model))
+}
+```
+
+3. Dengan parameter tuning (t) atau keketatan yang berbeda, dilakukan loop function untuk mendapatkan model terbaik. 
+
+```{r}
+# Set the range of t values
+t_values <- seq(0.05, 0.99, by = 0.01)
+```
+
+```{r}
+result <- calculate_RMSE(X, Y, t_values)
+print(result$results)      # Menampilkan hasil RMSE untuk setiap nilai t
+print(result$best_model)   # Menampilkan model dengan RMSE terendah dan nilai t terkait
+```
